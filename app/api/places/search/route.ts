@@ -44,7 +44,7 @@ export async function POST(req: Request) {
 
   const maxResults = Math.min(
     60,
-    Math.max(1, Number(body.maxResults) || 20)
+    Math.max(1, Number(body.maxResults) || 60)
   );
   const textQuery = buildLeadQuery(niche, location);
 

@@ -7,8 +7,11 @@ const PLACES_SEARCH_URL =
   "https://places.googleapis.com/v1/places:searchText";
 
 const FIELD_MASK = [
+  // Must be listed or the API omits it and pagination stops at 20 (first page).
+  "nextPageToken",
   "places.id",
   "places.displayName",
+  "places.location",
   "places.formattedAddress",
   "places.nationalPhoneNumber",
   "places.internationalPhoneNumber",
@@ -28,6 +31,9 @@ const FIELD_MASK = [
 export type PlaceLead = {
   id: string;
   name: string;
+  /** WGS84, when returned by Places API */
+  lat: number | null;
+  lng: number | null;
   address: string;
   phone: string;
   website: string;
@@ -47,6 +53,7 @@ export type PlaceLead = {
 type RawPlace = {
   id?: string;
   displayName?: { text?: string };
+  location?: { latitude?: number; longitude?: number };
   formattedAddress?: string;
   nationalPhoneNumber?: string;
   internationalPhoneNumber?: string;
@@ -89,9 +96,16 @@ function mapPlace(p: RawPlace): PlaceLead {
   const openingHoursText =
     weekday && weekday.length > 0 ? weekday.join(" · ") : null;
 
+  const lat =
+    typeof p.location?.latitude === "number" ? p.location.latitude : null;
+  const lng =
+    typeof p.location?.longitude === "number" ? p.location.longitude : null;
+
   return {
     id: p.id ?? "",
     name: p.displayName?.text?.trim() ?? "Desconocido",
+    lat,
+    lng,
     address: p.formattedAddress?.trim() ?? "",
     phone,
     website: p.websiteUri?.trim() ?? "",
@@ -127,7 +141,7 @@ export async function searchTextPlaces(
     const perPage = Math.min(20, maxTotal - collected.length);
     const body: Record<string, unknown> = {
       textQuery,
-      maxResultCount: perPage,
+      pageSize: perPage,
     };
     if (pageToken) {
       body.pageToken = pageToken;
