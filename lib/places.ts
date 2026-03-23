@@ -1,0 +1,157 @@
+/**
+ * Google Places API (New) — Text Search.
+ * Docs: https://developers.google.com/maps/documentation/places/web-service/text-search
+ */
+
+const PLACES_SEARCH_URL =
+  "https://places.googleapis.com/v1/places:searchText";
+
+const FIELD_MASK = [
+  "places.id",
+  "places.displayName",
+  "places.formattedAddress",
+  "places.nationalPhoneNumber",
+  "places.internationalPhoneNumber",
+  "places.websiteUri",
+  "places.rating",
+  "places.userRatingCount",
+  "places.googleMapsUri",
+  "places.businessStatus",
+].join(",");
+
+export type PlaceLead = {
+  id: string;
+  name: string;
+  address: string;
+  phone: string;
+  website: string;
+  rating: number | null;
+  reviewCount: number | null;
+  mapsUrl: string;
+  businessStatus: string | null;
+};
+
+type RawPlace = {
+  id?: string;
+  displayName?: { text?: string };
+  formattedAddress?: string;
+  nationalPhoneNumber?: string;
+  internationalPhoneNumber?: string;
+  websiteUri?: string;
+  rating?: number;
+  userRatingCount?: number;
+  googleMapsUri?: string;
+  businessStatus?: string;
+};
+
+type SearchTextResponse = {
+  places?: RawPlace[];
+  nextPageToken?: string;
+};
+
+function mapPlace(p: RawPlace): PlaceLead {
+  const phone =
+    p.nationalPhoneNumber?.trim() ||
+    p.internationalPhoneNumber?.trim() ||
+    "";
+  return {
+    id: p.id ?? "",
+    name: p.displayName?.text?.trim() ?? "Desconocido",
+    address: p.formattedAddress?.trim() ?? "",
+    phone,
+    website: p.websiteUri?.trim() ?? "",
+    rating: typeof p.rating === "number" ? p.rating : null,
+    reviewCount: typeof p.userRatingCount === "number" ? p.userRatingCount : null,
+    mapsUrl: p.googleMapsUri?.trim() ?? "",
+    businessStatus: p.businessStatus ?? null,
+  };
+}
+
+export async function searchTextPlaces(
+  apiKey: string,
+  textQuery: string,
+  options: {
+    maxTotal: number;
+    regionCode?: string;
+    languageCode?: string;
+  }
+): Promise<{ places: PlaceLead[]; truncated: boolean }> {
+  const maxTotal = Math.min(Math.max(1, options.maxTotal), 60);
+  const collected: PlaceLead[] = [];
+  let pageToken: string | undefined;
+  let truncated = false;
+
+  while (collected.length < maxTotal) {
+    const perPage = Math.min(20, maxTotal - collected.length);
+    const body: Record<string, unknown> = {
+      textQuery,
+      maxResultCount: perPage,
+    };
+    if (pageToken) {
+      body.pageToken = pageToken;
+    }
+    if (options.regionCode) {
+      body.regionCode = options.regionCode;
+    }
+    if (options.languageCode) {
+      body.languageCode = options.languageCode;
+    }
+
+    const res = await fetch(PLACES_SEARCH_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": apiKey,
+        "X-Goog-FieldMask": FIELD_MASK,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const rawText = await res.text();
+    let data: SearchTextResponse;
+    try {
+      data = JSON.parse(rawText) as SearchTextResponse;
+    } catch {
+      throw new Error(
+        res.ok
+          ? "Respuesta JSON inválida de Places API"
+          : `Error de Places API (${res.status}): ${rawText.slice(0, 500)}`
+      );
+    }
+
+    if (!res.ok) {
+      const msg =
+        (data as unknown as { error?: { message?: string } }).error
+          ?.message || rawText.slice(0, 500);
+      throw new Error(`Places API (${res.status}): ${msg}`);
+    }
+
+    const batch = (data.places ?? []).map(mapPlace);
+    for (const place of batch) {
+      if (!collected.some((c) => c.id && c.id === place.id)) {
+        collected.push(place);
+      }
+      if (collected.length >= maxTotal) break;
+    }
+
+    pageToken = data.nextPageToken;
+    if (!pageToken || batch.length === 0) break;
+
+    if (collected.length >= maxTotal) {
+      truncated = !!pageToken;
+      break;
+    }
+
+    // Next page token often needs a short delay (Google recommendation for legacy; safe here too)
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+
+  return { places: collected.slice(0, maxTotal), truncated };
+}
+
+export function buildLeadQuery(niche: string, location: string): string {
+  const n = niche.trim();
+  const l = location.trim();
+  if (!n || !l) return `${n} ${l}`.trim();
+  return `${n} en ${l}`;
+}
