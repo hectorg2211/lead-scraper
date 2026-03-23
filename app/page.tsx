@@ -1,22 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import type { PlaceLead } from "@/lib/places";
 
 type GeocodePayload = { label: string; countryCode?: string };
 
 let didRunAutoLocation = false;
-
-type PlaceLead = {
-  id: string;
-  name: string;
-  address: string;
-  phone: string;
-  website: string;
-  rating: number | null;
-  reviewCount: number | null;
-  mapsUrl: string;
-  businessStatus: string | null;
-};
 
 const NICHE_PRESETS = [
   "Clínica dental",
@@ -36,16 +25,31 @@ function escapeCsvCell(value: string): string {
   return value;
 }
 
+function websiteHref(url: string): string {
+  const u = url.trim();
+  return u.startsWith("http") ? u : `https://${u}`;
+}
+
+function websiteLabel(url: string): string {
+  const host = url.replace(/^https?:\/\//, "").trim();
+  return host.length > 32 ? `${host.slice(0, 32)}…` : host;
+}
+
 function toCsv(rows: PlaceLead[]): string {
   const header = [
     "Nombre",
     "Dirección",
     "Teléfono",
     "Sitio web",
+    "Categoría principal",
+    "Tipos (Google)",
+    "Resumen",
+    "Nivel de precio",
+    "Horario",
     "Valoración",
     "Reseñas",
     "Google Maps",
-    "Estado",
+    "Estado negocio",
   ];
   const lines = [
     header.join(","),
@@ -55,6 +59,11 @@ function toCsv(rows: PlaceLead[]): string {
         escapeCsvCell(r.address),
         escapeCsvCell(r.phone),
         escapeCsvCell(r.website),
+        escapeCsvCell(r.primaryTypeLabel ?? r.primaryType ?? ""),
+        escapeCsvCell(r.types.join("; ")),
+        escapeCsvCell(r.summary ?? ""),
+        escapeCsvCell(r.priceLevelLabel ?? r.priceLevel ?? ""),
+        escapeCsvCell(r.openingHoursText ?? ""),
         r.rating != null ? String(r.rating) : "",
         r.reviewCount != null ? String(r.reviewCount) : "",
         escapeCsvCell(r.mapsUrl),
@@ -365,21 +374,114 @@ export default function Home() {
             </div>
 
             <div className="overflow-x-auto rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-              <table className="min-w-full text-left text-sm">
+              <table className="min-w-[1100px] text-left text-sm">
                 <thead className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950/80">
                   <tr>
-                    <th className="px-4 py-3 font-medium">Nombre</th>
-                    <th className="px-4 py-3 font-medium">Teléfono</th>
-                    <th className="px-4 py-3 font-medium">Dirección</th>
-                    <th className="px-4 py-3 font-medium">Maps</th>
+                    <th className="min-w-[140px] px-4 py-3 font-medium">
+                      Nombre
+                    </th>
+                    <th className="min-w-[100px] px-4 py-3 font-medium">
+                      Web
+                    </th>
+                    <th className="min-w-[110px] px-4 py-3 font-medium">
+                      Teléfono
+                    </th>
+                    <th className="min-w-[120px] px-4 py-3 font-medium">
+                      Categoría
+                    </th>
+                    <th className="min-w-[72px] px-4 py-3 font-medium">
+                      Nota
+                    </th>
+                    <th className="min-w-[220px] max-w-72 px-4 py-3 font-medium">
+                      Resumen
+                    </th>
+                    <th className="min-w-[90px] px-4 py-3 font-medium">
+                      Precio
+                    </th>
+                    <th className="min-w-[180px] max-w-xs px-4 py-3 font-medium">
+                      Horario
+                    </th>
+                    <th className="min-w-[200px] px-4 py-3 font-medium">
+                      Dirección
+                    </th>
+                    <th className="min-w-[64px] px-4 py-3 font-medium">
+                      Maps
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                   {places.map((p) => (
                     <tr key={p.id || p.name + p.address} className="align-top">
                       <td className="px-4 py-3 font-medium">{p.name}</td>
+                      <td className="px-4 py-3">
+                        {p.website ? (
+                          <a
+                            href={websiteHref(p.website)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="break-all text-emerald-700 underline decoration-emerald-700/30 underline-offset-2 hover:decoration-emerald-700 dark:text-emerald-400"
+                          >
+                            {websiteLabel(p.website)}
+                          </a>
+                        ) : (
+                          <span className="text-zinc-400">—</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 tabular-nums text-zinc-700 dark:text-zinc-300">
                         {p.phone || "—"}
+                      </td>
+                      <td className="max-w-[140px] px-4 py-3 text-zinc-700 dark:text-zinc-300">
+                        <span className="line-clamp-3" title={p.primaryType ?? ""}>
+                          {p.primaryTypeLabel ?? p.primaryType ?? "—"}
+                        </span>
+                        {p.types.length > 0 && (
+                          <p
+                            className="mt-1 text-xs text-zinc-500 dark:text-zinc-500"
+                            title={p.types.join(", ")}
+                          >
+                            {p.types.slice(0, 3).join(", ")}
+                            {p.types.length > 3 ? "…" : ""}
+                          </p>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 tabular-nums text-zinc-700 dark:text-zinc-300">
+                        {p.rating != null ? (
+                          <>
+                            {p.rating.toFixed(1)}
+                            {p.reviewCount != null ? (
+                              <span className="text-xs text-zinc-500">
+                                {" "}
+                                ({p.reviewCount})
+                              </span>
+                            ) : null}
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="max-w-72 px-4 py-3 text-zinc-600 dark:text-zinc-400">
+                        {p.summary ? (
+                          <p className="line-clamp-4 text-xs" title={p.summary}>
+                            {p.summary}
+                          </p>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-zinc-700 dark:text-zinc-300">
+                        {p.priceLevelLabel ?? p.priceLevel ?? "—"}
+                      </td>
+                      <td className="max-w-xs px-4 py-3 text-xs text-zinc-600 dark:text-zinc-400">
+                        {p.openingHoursText ? (
+                          <p
+                            className="line-clamp-3"
+                            title={p.openingHoursText}
+                          >
+                            {p.openingHoursText}
+                          </p>
+                        ) : (
+                          "—"
+                        )}
                       </td>
                       <td className="max-w-xs px-4 py-3 text-zinc-600 dark:text-zinc-400">
                         {p.address || "—"}

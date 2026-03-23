@@ -17,6 +17,12 @@ const FIELD_MASK = [
   "places.userRatingCount",
   "places.googleMapsUri",
   "places.businessStatus",
+  "places.types",
+  "places.primaryType",
+  "places.primaryTypeDisplayName",
+  "places.editorialSummary",
+  "places.priceLevel",
+  "places.regularOpeningHours",
 ].join(",");
 
 export type PlaceLead = {
@@ -29,6 +35,13 @@ export type PlaceLead = {
   reviewCount: number | null;
   mapsUrl: string;
   businessStatus: string | null;
+  types: string[];
+  primaryType: string | null;
+  primaryTypeLabel: string | null;
+  summary: string | null;
+  priceLevel: string | null;
+  priceLevelLabel: string | null;
+  openingHoursText: string | null;
 };
 
 type RawPlace = {
@@ -42,7 +55,25 @@ type RawPlace = {
   userRatingCount?: number;
   googleMapsUri?: string;
   businessStatus?: string;
+  types?: string[];
+  primaryType?: string;
+  primaryTypeDisplayName?: { text?: string };
+  editorialSummary?: { text?: string };
+  priceLevel?: string;
+  regularOpeningHours?: { weekdayDescriptions?: string[] };
 };
+
+function labelPriceLevel(code: string | undefined): string | null {
+  if (!code || code === "PRICE_LEVEL_UNSPECIFIED") return null;
+  const map: Record<string, string> = {
+    PRICE_LEVEL_FREE: "Gratis",
+    PRICE_LEVEL_INEXPENSIVE: "Económico (€)",
+    PRICE_LEVEL_MODERATE: "Moderado (€€)",
+    PRICE_LEVEL_EXPENSIVE: "Caro (€€€)",
+    PRICE_LEVEL_VERY_EXPENSIVE: "Muy caro (€€€€)",
+  };
+  return map[code] ?? code.replace(/^PRICE_LEVEL_/, "").replace(/_/g, " ");
+}
 
 type SearchTextResponse = {
   places?: RawPlace[];
@@ -54,6 +85,10 @@ function mapPlace(p: RawPlace): PlaceLead {
     p.nationalPhoneNumber?.trim() ||
     p.internationalPhoneNumber?.trim() ||
     "";
+  const weekday = p.regularOpeningHours?.weekdayDescriptions;
+  const openingHoursText =
+    weekday && weekday.length > 0 ? weekday.join(" · ") : null;
+
   return {
     id: p.id ?? "",
     name: p.displayName?.text?.trim() ?? "Desconocido",
@@ -64,6 +99,13 @@ function mapPlace(p: RawPlace): PlaceLead {
     reviewCount: typeof p.userRatingCount === "number" ? p.userRatingCount : null,
     mapsUrl: p.googleMapsUri?.trim() ?? "",
     businessStatus: p.businessStatus ?? null,
+    types: Array.isArray(p.types) ? p.types : [],
+    primaryType: p.primaryType?.trim() ?? null,
+    primaryTypeLabel: p.primaryTypeDisplayName?.text?.trim() ?? null,
+    summary: p.editorialSummary?.text?.trim() ?? null,
+    priceLevel: p.priceLevel ?? null,
+    priceLevelLabel: labelPriceLevel(p.priceLevel),
+    openingHoursText,
   };
 }
 
