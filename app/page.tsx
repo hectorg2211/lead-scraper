@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+type GeocodePayload = { label: string; countryCode?: string };
+
+let didRunAutoLocation = false;
+
 type PlaceLead = {
   id: string;
   name: string;
@@ -72,8 +76,83 @@ export default function Home() {
   const [truncated, setTruncated] = useState(false);
   const [places, setPlaces] = useState<PlaceLead[]>([]);
   const [csvUrl, setCsvUrl] = useState<string | null>(null);
+  const [locDetecting, setLocDetecting] = useState(false);
+  const [locHint, setLocHint] = useState<string | null>(null);
 
   const canSearch = niche.trim().length > 0 && location.trim().length > 0;
+
+  const applyGeocode = useCallback((data: GeocodePayload, force: boolean) => {
+    if (force) {
+      setLocation(data.label);
+      if (data.countryCode) setRegionCode(data.countryCode);
+    } else {
+      setLocation((prev) => (prev.trim() === "" ? data.label : prev));
+      setRegionCode((prev) =>
+        prev.trim() === "" && data.countryCode ? data.countryCode : prev
+      );
+    }
+    setLocHint(null);
+  }, []);
+
+  const requestMyLocation = useCallback(
+    (force: boolean) => {
+      if (typeof navigator === "undefined" || !navigator.geolocation) {
+        setLocHint("Tu navegador no permite geolocalización.");
+        return;
+      }
+      setLocDetecting(true);
+      setLocHint(null);
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          try {
+            const res = await fetch("/api/geocode/reverse", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+              }),
+            });
+            const data = (await res.json()) as {
+              error?: string;
+              label?: string;
+              countryCode?: string;
+            };
+            if (!res.ok || !data.label) {
+              setLocHint(data.error ?? "No se pudo obtener la ciudad.");
+              return;
+            }
+            applyGeocode(
+              { label: data.label, countryCode: data.countryCode },
+              force
+            );
+          } catch {
+            setLocHint("Error de red al geocodificar.");
+          } finally {
+            setLocDetecting(false);
+          }
+        },
+        (err) => {
+          setLocDetecting(false);
+          if (err.code === err.PERMISSION_DENIED) {
+            setLocHint(
+              "Ubicación denegada. Escribe la ciudad o pulsa de nuevo y permite el permiso."
+            );
+          } else {
+            setLocHint("No se pudo leer tu ubicación.");
+          }
+        },
+        { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 }
+      );
+    },
+    [applyGeocode]
+  );
+
+  useEffect(() => {
+    if (didRunAutoLocation) return;
+    didRunAutoLocation = true;
+    requestMyLocation(false);
+  }, [requestMyLocation]);
 
   useEffect(() => {
     if (places.length === 0) {
@@ -173,17 +252,38 @@ export default function Home() {
                 className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-base outline-none ring-emerald-500/0 transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-zinc-600 dark:bg-zinc-950"
               />
             </label>
-            <label className="flex flex-col gap-1.5 text-sm">
-              <span className="font-medium text-zinc-800 dark:text-zinc-200">
-                Ubicación
-              </span>
+            <div className="flex flex-col gap-1.5 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                  Ubicación
+                </span>
+                <button
+                  type="button"
+                  disabled={locDetecting}
+                  onClick={() => requestMyLocation(true)}
+                  className="text-xs font-medium text-emerald-700 underline decoration-emerald-700/30 underline-offset-2 hover:decoration-emerald-700 disabled:cursor-wait disabled:opacity-60 dark:text-emerald-400"
+                >
+                  {locDetecting ? "Detectando…" : "Usar mi ubicación"}
+                </button>
+              </div>
               <input
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
                 placeholder="p. ej. Madrid, España"
+                autoComplete="address-level2"
                 className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-base outline-none ring-emerald-500/0 transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-zinc-600 dark:bg-zinc-950"
               />
-            </label>
+              {locDetecting && (
+                <p className="text-xs text-zinc-500">
+                  Obteniendo tu ciudad automáticamente…
+                </p>
+              )}
+              {locHint && !locDetecting && (
+                <p className="text-xs text-amber-800 dark:text-amber-200/90">
+                  {locHint}
+                </p>
+              )}
+            </div>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
