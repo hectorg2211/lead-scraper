@@ -26,6 +26,7 @@ import {
 } from "@/lib/lead-status-i18n";
 import { cn } from "@/lib/utils";
 import { generateOutreachMessage } from "@/lib/outreach-message";
+import { whatsappMeDigits } from "@/lib/whatsapp-phone";
 import type {
   LeadPriority,
   LeadStatus,
@@ -113,10 +114,6 @@ function LeadRow({
   );
 }
 
-function waDigits(phone: string): string {
-  return phone.replace(/\D/g, "");
-}
-
 function LeadEditor({
   lead,
   onUpdated,
@@ -148,9 +145,9 @@ function LeadEditor({
   }, [lead.id, lead.outreachMessage]);
 
   const phone = lead.place.phone?.trim() ?? "";
-  const digits = waDigits(phone);
+  const digits = whatsappMeDigits(phone);
   const waUrl =
-    digits.length >= 8
+    digits.length >= 12
       ? `https://wa.me/${digits}`
       : null;
   const waWithMessage =
@@ -250,14 +247,22 @@ function LeadEditor({
     }
   };
 
+  const isPlain = variant === "plain";
+
   return (
     <article
       className={
-        variant === "plain"
-          ? "min-w-0"
+        isPlain
+          ? "flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
           : "rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
       }
     >
+      <div
+        className={cn(
+          isPlain &&
+            "min-h-0 flex-1 overflow-y-auto overscroll-contain pb-2 [-webkit-overflow-scrolling:touch]"
+        )}
+      >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h3 className="text-lg font-semibold leading-tight">
@@ -448,16 +453,21 @@ function LeadEditor({
           />
         </label>
       </div>
+      </div>
 
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void save()}
-          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
-        >
-          {busy ? "Guardando…" : "Guardar cambios"}
-        </button>
+      <div
+        className={cn(
+          "flex flex-wrap items-center justify-end gap-3",
+          isPlain
+            ? "shrink-0 border-t border-zinc-200 bg-zinc-50/95 py-3 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/95"
+            : "mt-4"
+        )}
+      >
+        {msg && (
+          <span className="mr-auto text-sm text-zinc-600 dark:text-zinc-400">
+            {msg}
+          </span>
+        )}
         <button
           type="button"
           disabled={busy}
@@ -466,9 +476,14 @@ function LeadEditor({
         >
           Quitar de la lista
         </button>
-        {msg && (
-          <span className="text-sm text-zinc-600 dark:text-zinc-400">{msg}</span>
-        )}
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void save()}
+          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+        >
+          {busy ? "Guardando…" : "Guardar cambios"}
+        </button>
       </div>
     </article>
   );
@@ -580,13 +595,13 @@ export default function ListDetailPage() {
                 if (!open) setOpenLeadId(null);
               }}
             >
-              <DialogContent className="max-h-[min(90vh,56rem)] w-full gap-0 overflow-y-auto p-0 sm:max-w-3xl">
+              <DialogContent className="flex max-h-[min(90vh,56rem)] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
                 {selectedLead && (
                   <>
                     <DialogHeader className="sr-only">
                       <DialogTitle>{selectedLead.place.name}</DialogTitle>
                     </DialogHeader>
-                    <div className="p-4 pt-12 sm:p-6 sm:pt-14">
+                    <div className="flex min-h-0 flex-1 flex-col px-4 pt-12 pb-0 sm:px-6 sm:pt-14">
                       <LeadEditor
                         key={selectedLead.id}
                         variant="plain"

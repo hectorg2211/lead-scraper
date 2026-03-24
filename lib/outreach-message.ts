@@ -1,13 +1,12 @@
 import type { PlaceLead } from "@/lib/places";
+import { getOutreachSenderName } from "@/lib/outreach-sender-name";
 
 /**
- * Borrador tipo WhatsApp: prototipo hecho para ellos + prueba gratuita 1 mes.
- * Español de México. Tono en primera persona (sin “equipo”).
- * Sin mencionar pagos ni auditorías.
+ * Borrador tipo WhatsApp: prototipo hecho para el negocio del prospecto (no confundir con la empresa del remitente).
+ * Español de México.
  */
 export function generateOutreachMessage(place: PlaceLead): string {
   const business = place.name?.trim() || "";
-  const greeting = business ? `Hola, ${business},` : "Hola,";
   const category =
     place.primaryTypeLabel?.trim() ||
     place.primaryType?.replace(/^_|_$/g, "").replace(/_/g, " ") ||
@@ -26,24 +25,34 @@ export function generateOutreachMessage(place: PlaceLead): string {
     ? ""
     : `
 
-Por cierto, si aún no tienes página web, suele valer la pena una presencia en línea sencilla. Da confianza a quien te encuentra en Maps antes de escribir y va muy bien con el WhatsApp bien atendido. También te preparé un prototipo de página pensado para tu negocio si quieres verlo en la misma llamada.`;
+🌐 También tengo ideas para mejorar la presencia online del negocio, para que más gente te encuentre. Si aún no tienes página web, suele valer la pena algo sencillo en línea. Puedo mostrarte un prototipo de página pensado para ti en la misma llamada.`;
 
-  const protoFor =
-    business ||
-    "tu negocio";
+  const trialLine = hasWebsite
+    ? "🎁 La prueba es gratis: un mes completo, sin compromiso, para que lo pruebes y veas el impacto."
+    : "La prueba es gratis: un mes completo, sin compromiso, para que lo pruebes y veas el impacto.";
 
-  return `${greeting}
+  const sender = getOutreachSenderName();
+  const signOff = sender || "[Tu nombre]";
+  const intro = sender
+    ? `Hola, ¿qué tal? Soy ${sender}.`
+    : "Hola, ¿qué tal?";
 
-Te escribí hace un rato por una consulta o reserva y aún no había respuesta. Entiendo que andes muy ocupado.
+  const paraNegocio = business
+    ? `pensado para ${business} (${category.toLowerCase()})`
+    : `pensado para negocios de ${category.toLowerCase()}`;
 
-También sé que si el WhatsApp queda sin contestar, mucha gente le marca al siguiente en Google Maps.
+  return `${intro}
 
-Te armé un prototipo en específico para ${protoFor}. Es automatización con IA en WhatsApp pensada para negocios de ${category.toLowerCase()}. Responde preguntas frecuentes y agenda citas para que no se te escapen clientes mientras atiendes.
+Te escribo porque armé un prototipo de automatización con IA para WhatsApp, específicamente ${paraNegocio}. Sé que muchas veces se pueden perder clientes si no se responden mensajes a tiempo 😬
 
-La prueba gratuita es de un mes para que lo pruebes sin compromiso.${onlinePresenceLine}
+📱 Google Maps empuja a que la gente llame o escriba al siguiente en la categoría, y eso puede afectar el negocio.
 
-¿Te parece bien una llamada de 10 minutos? Te muestro cómo quedó el prototipo pensado para ti. ${locality}
+🤖 Con el prototipo se pueden atender preguntas frecuentes y gestionar citas de forma más eficiente mientras atienden.
 
-Gracias,
-[Tu nombre]`;
+${trialLine}${onlinePresenceLine}
+
+📞 ¿Qué te parece una llamada corta o videollamada para mostrarte cómo quedó el prototipo? ${locality}
+
+Saludos,
+${signOff}`;
 }

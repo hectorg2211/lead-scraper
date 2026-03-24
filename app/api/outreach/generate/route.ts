@@ -1,6 +1,7 @@
 import OpenAI from "openai";
 import { NextResponse } from "next/server";
 import { OUTREACH_AI_SYSTEM_PROMPT } from "@/lib/outreach-ai-prompt";
+import { getOutreachSenderName } from "@/lib/outreach-sender-name";
 import type { PlaceLead } from "@/lib/places";
 
 export const runtime = "nodejs";
@@ -51,13 +52,21 @@ export async function POST(req: Request) {
   const openai = new OpenAI({ apiKey });
 
   try {
+    const senderName = getOutreachSenderName();
+    const senderBlock = senderName
+      ? `\n\nNombre del remitente (solo para presentarte y firmar, p. ej. "Soy ${senderName}"): ${senderName}`
+      : "\n\nNombre del remitente: no indicado. Firma con el texto literal [Tu nombre].";
+
+    const identityNote =
+      '\n\nImportante: en el JSON, "name" es el negocio del prospecto en Google Maps (a quien escribes), no tu empresa. No digas "Soy [remitente] de [name]" como si trabajaras ahí.';
+
     const completion = await openai.chat.completions.create({
       model,
       messages: [
         { role: "system", content: OUTREACH_AI_SYSTEM_PROMPT },
         {
           role: "user",
-          content: `Datos del negocio (JSON):\n${JSON.stringify(summarizePlaceForModel(place), null, 2)}`,
+          content: `Datos del negocio (JSON):\n${JSON.stringify(summarizePlaceForModel(place), null, 2)}${senderBlock}${identityNote}`,
         },
       ],
       temperature: 0.65,
