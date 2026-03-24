@@ -1,4 +1,23 @@
 import type { PlaceLead } from "@/lib/places";
+
+/** Genera mensaje de contacto con IA (requiere OPENAI_API_KEY en el servidor). */
+export async function generateOutreachWithAi(
+  place: PlaceLead
+): Promise<string> {
+  const res = await fetch("/api/outreach/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ place }),
+  });
+  const data = (await res.json()) as { message?: string; error?: string };
+  if (!res.ok) {
+    throw new Error(data.error ?? `Error ${res.status}`);
+  }
+  if (!data.message?.trim()) {
+    throw new Error("Respuesta inválida del servidor");
+  }
+  return data.message.trim();
+}
 import type {
   LeadList,
   LeadPriority,
@@ -86,6 +105,8 @@ export async function savePlaceToList(
   options?: {
     tags?: string[];
     sourceQuery?: string | null;
+    status?: LeadStatus;
+    priority?: LeadPriority;
   }
 ): Promise<{ lead: SavedLead; created: boolean }> {
   const res = await fetch(`/api/lists/${listId}/leads`, {
@@ -95,6 +116,8 @@ export async function savePlaceToList(
       place,
       tags: options?.tags,
       sourceQuery: options?.sourceQuery ?? null,
+      status: options?.status,
+      priority: options?.priority,
     }),
   });
   const data = (await res.json()) as {
@@ -144,6 +167,7 @@ export async function updateLeadApi(
     priority?: LeadPriority;
     followUpAt?: string | null;
     nextStep?: string | null;
+    outreachMessage?: string;
   }
 ): Promise<SavedLead> {
   const res = await fetch(`/api/leads/${leadId}`, {

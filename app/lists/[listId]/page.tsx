@@ -3,33 +3,102 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   deleteLeadApi,
   fetchListLeads,
+  generateOutreachWithAi,
   listLeadsQueryKey,
   listsQueryKey,
   updateLeadApi,
 } from "@/lib/leads-api";
+import {
+  STATUS_BADGE_CLASSES,
+  STATUS_FIELD_CLASSES,
+  STATUS_LABELS,
+} from "@/lib/lead-status-i18n";
+import { cn } from "@/lib/utils";
+import { generateOutreachMessage } from "@/lib/outreach-message";
 import type {
   LeadPriority,
   LeadStatus,
   SavedLead,
 } from "@/lib/saved-leads-types";
 
-const STATUS_LABELS: Record<LeadStatus, string> = {
-  new: "Nuevo",
-  contacted: "Contactado",
-  qualified: "Cualificado",
-  lost: "Descartado",
-  won: "Ganado",
-};
-
 const PRIORITY_LABELS: Record<LeadPriority, string> = {
   low: "Baja",
   medium: "Media",
   high: "Alta",
 };
+
+function truncateDetail(s: string, maxLen: number): string {
+  const t = s.trim();
+  if (t.length <= maxLen) return t;
+  return `${t.slice(0, maxLen - 1)}…`;
+}
+
+function LeadRow({
+  lead,
+  onSelect,
+}: {
+  lead: SavedLead;
+  onSelect: () => void;
+}) {
+  const phone = lead.place.phone?.trim() ?? "";
+  const address = lead.place.address?.trim() ?? "";
+  const detailParts: string[] = [];
+  if (phone) detailParts.push(phone);
+  if (address) detailParts.push(truncateDetail(address, 40));
+  const secondary =
+    detailParts.join(" · ") ||
+    lead.place.primaryTypeLabel ||
+    (lead.tags[0] ? `#${lead.tags[0]}` : null) ||
+    "—";
+
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      className="group flex w-full items-center gap-3 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-left shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50/50 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-emerald-700 dark:hover:bg-emerald-950/30"
+    >
+      <div className="min-w-0 flex-1">
+        <p className="truncate font-semibold text-zinc-900 dark:text-zinc-50">
+          {lead.place.name}
+        </p>
+        <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+          {secondary}
+        </p>
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+        <span
+          className={cn(
+            "whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium",
+            STATUS_BADGE_CLASSES[lead.status]
+          )}
+        >
+          {STATUS_LABELS[lead.status]}
+        </span>
+        <span
+          className={
+            lead.priority === "high"
+              ? "whitespace-nowrap rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-800 dark:bg-red-950/60 dark:text-red-200"
+              : lead.priority === "medium"
+                ? "whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900 dark:bg-amber-950/50 dark:text-amber-200"
+                : "whitespace-nowrap rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300"
+          }
+        >
+          {PRIORITY_LABELS[lead.priority]}
+        </span>
+      </div>
+    </button>
+  );
+}
 
 function waDigits(phone: string): string {
   return phone.replace(/\D/g, "");
@@ -39,10 +108,13 @@ function LeadEditor({
   lead,
   onUpdated,
   onDeleted,
+  variant = "card",
 }: {
   lead: SavedLead;
   onUpdated: () => void;
   onDeleted: () => void;
+  /** `plain` = no inner frame; use inside modal/dialog */
+  variant?: "card" | "plain";
 }) {
   const [tags, setTags] = useState(lead.tags.join(", "));
   const [notes, setNotes] = useState(lead.notes);
@@ -52,8 +124,15 @@ function LeadEditor({
     lead.followUpAt ? lead.followUpAt.slice(0, 16) : ""
   );
   const [nextStep, setNextStep] = useState(lead.nextStep ?? "");
+  const [outreachMessage, setOutreachMessage] = useState(
+    lead.outreachMessage ?? ""
+  );
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    setOutreachMessage(lead.outreachMessage ?? "");
+  }, [lead.id, lead.outreachMessage]);
 
   const phone = lead.place.phone?.trim() ?? "";
   const digits = waDigits(phone);
@@ -61,6 +140,10 @@ function LeadEditor({
     digits.length >= 8
       ? `https://wa.me/${digits}`
       : null;
+  const waWithMessage =
+    waUrl && outreachMessage.trim()
+      ? `${waUrl}?text=${encodeURIComponent(outreachMessage.trim())}`
+      : waUrl;
 
   const save = useCallback(async () => {
     setBusy(true);
@@ -77,6 +160,7 @@ function LeadEditor({
         priority,
         followUpAt: followUpAt ? new Date(followUpAt).toISOString() : null,
         nextStep: nextStep.trim() || null,
+        outreachMessage,
       });
       onUpdated();
       setMsg("Guardado");
@@ -94,8 +178,41 @@ function LeadEditor({
     priority,
     followUpAt,
     nextStep,
+    outreachMessage,
     onUpdated,
   ]);
+
+  const generateOutreach = useCallback(async () => {
+    setBusy(true);
+    setMsg(null);
+    try {
+      let text: string;
+      let usedFallback = false;
+      let fallbackReason = "";
+      try {
+        text = await generateOutreachWithAi(lead.place);
+      } catch (aiErr) {
+        usedFallback = true;
+        text = generateOutreachMessage(lead.place);
+        fallbackReason =
+          aiErr instanceof Error ? aiErr.message : "IA no disponible";
+      }
+      setOutreachMessage(text);
+      await updateLeadApi(lead.id, { outreachMessage: text });
+      onUpdated();
+      if (usedFallback) {
+        setMsg(`Guardado con plantilla — ${fallbackReason}`);
+        setTimeout(() => setMsg(null), 6000);
+      } else {
+        setMsg("Mensaje generado y guardado (IA)");
+        setTimeout(() => setMsg(null), 2500);
+      }
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : "Error al generar");
+    } finally {
+      setBusy(false);
+    }
+  }, [lead.id, lead.place, onUpdated]);
 
   const remove = useCallback(async () => {
     if (!confirm("¿Quitar este prospecto de la lista?")) return;
@@ -121,7 +238,13 @@ function LeadEditor({
   };
 
   return (
-    <article className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+    <article
+      className={
+        variant === "plain"
+          ? "min-w-0"
+          : "rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
+      }
+    >
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h3 className="text-lg font-semibold leading-tight">
@@ -195,6 +318,47 @@ function LeadEditor({
         )}
       </div>
 
+      <div className="mt-4 flex flex-col gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-sm font-medium">Mensaje de contacto (WhatsApp)</span>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void generateOutreach()}
+            className="rounded-lg border border-emerald-600 bg-emerald-50 px-3 py-1.5 text-sm font-medium text-emerald-900 hover:bg-emerald-100 disabled:opacity-50 dark:border-emerald-500 dark:bg-emerald-950/50 dark:text-emerald-100 dark:hover:bg-emerald-900/50"
+          >
+            Generar con IA
+          </button>
+        </div>
+        <textarea
+          value={outreachMessage}
+          onChange={(e) => setOutreachMessage(e.target.value)}
+          rows={12}
+          placeholder="Pulsa «Generar con IA» (requiere OPENAI_API_KEY) o escribe tu texto. Sin clave se usa una plantilla. «Guardar cambios» persiste todo."
+          className="rounded-lg border border-zinc-300 bg-white px-3 py-2 font-mono text-sm leading-relaxed dark:border-zinc-600 dark:bg-zinc-950"
+        />
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={!outreachMessage.trim()}
+            onClick={() => void copy(outreachMessage.trim(), "Mensaje")}
+            className="text-sm font-medium text-emerald-700 underline dark:text-emerald-400 disabled:opacity-40"
+          >
+            Copiar mensaje
+          </button>
+          {waWithMessage && (
+            <a
+              href={waWithMessage}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-medium text-emerald-700 underline dark:text-emerald-400"
+            >
+              Abrir WhatsApp con este texto
+            </a>
+          )}
+        </div>
+      </div>
+
       <div className="mt-4 grid gap-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1 text-sm">
           <span className="font-medium">Etiquetas (separadas por coma)</span>
@@ -211,7 +375,10 @@ function LeadEditor({
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value as LeadStatus)}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-950"
+              className={cn(
+                "rounded-lg border px-3 py-2",
+                STATUS_FIELD_CLASSES[status]
+              )}
             >
               {(Object.keys(STATUS_LABELS) as LeadStatus[]).map((k) => (
                 <option key={k} value={k}>
@@ -303,12 +470,22 @@ export default function ListDetailPage() {
 
   const qc = useQueryClient();
   const [tagFilter, setTagFilter] = useState("");
+  const [openLeadId, setOpenLeadId] = useState<string | null>(null);
 
   const query = useQuery({
     queryKey: listLeadsQueryKey(listId || null, tagFilter),
     queryFn: () => fetchListLeads(listId, tagFilter || undefined),
     enabled: Boolean(listId),
   });
+
+  const selectedLead = useMemo(
+    () => query.data?.leads.find((l) => l.id === openLeadId) ?? null,
+    [query.data?.leads, openLeadId]
+  );
+
+  useEffect(() => {
+    if (openLeadId && !selectedLead) setOpenLeadId(null);
+  }, [openLeadId, selectedLead]);
 
   const refetch = useCallback(() => {
     void qc.invalidateQueries({ queryKey: listsQueryKey });
@@ -374,16 +551,44 @@ export default function ListDetailPage() {
               </label>
             </div>
 
-            <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-2">
               {query.data.leads.map((lead) => (
-                <LeadEditor
+                <LeadRow
                   key={lead.id}
                   lead={lead}
-                  onUpdated={refetch}
-                  onDeleted={refetch}
+                  onSelect={() => setOpenLeadId(lead.id)}
                 />
               ))}
             </div>
+
+            <Dialog
+              open={Boolean(selectedLead)}
+              onOpenChange={(open) => {
+                if (!open) setOpenLeadId(null);
+              }}
+            >
+              <DialogContent className="max-h-[min(90vh,56rem)] w-full gap-0 overflow-y-auto p-0 sm:max-w-3xl">
+                {selectedLead && (
+                  <>
+                    <DialogHeader className="sr-only">
+                      <DialogTitle>{selectedLead.place.name}</DialogTitle>
+                    </DialogHeader>
+                    <div className="p-4 pt-12 sm:p-6 sm:pt-14">
+                      <LeadEditor
+                        key={selectedLead.id}
+                        variant="plain"
+                        lead={selectedLead}
+                        onUpdated={refetch}
+                        onDeleted={() => {
+                          setOpenLeadId(null);
+                          refetch();
+                        }}
+                      />
+                    </div>
+                  </>
+                )}
+              </DialogContent>
+            </Dialog>
 
             {query.data.leads.length === 0 && (
               <p className="text-sm text-zinc-500">

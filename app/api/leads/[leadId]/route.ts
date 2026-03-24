@@ -38,6 +38,7 @@ type PatchBody = {
   priority?: LeadPriority;
   followUpAt?: string | null;
   nextStep?: string | null;
+  outreachMessage?: string;
 };
 
 export async function PATCH(req: Request, ctx: Ctx) {

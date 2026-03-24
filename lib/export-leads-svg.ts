@@ -32,13 +32,15 @@ const COLS: Col[] = [
   { w: 88, max: 24, header: "Precio", cell: (r) => r.priceLevelLabel ?? r.priceLevel ?? "" },
   { w: 180, max: 48, header: "Horario", cell: (r) => r.openingHoursText ?? "" },
   {
-    w: 56,
-    max: 14,
-    header: "Nota",
+    w: 72,
+    max: 18,
+    header: "Reseñas",
     cell: (r) =>
-      r.rating != null
-        ? `${r.rating}${r.reviewCount != null ? ` (${r.reviewCount})` : ""}`
-        : "",
+      r.reviewCount != null
+        ? `${r.reviewCount}${r.rating != null ? ` · ${r.rating}` : ""}`
+        : r.rating != null
+          ? String(r.rating)
+          : "",
   },
   { w: 200, max: 48, header: "Maps", cell: (r) => r.mapsUrl },
   { w: 96, max: 20, header: "Estado", cell: (r) => r.businessStatus ?? "" },

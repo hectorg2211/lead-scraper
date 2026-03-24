@@ -45,6 +45,7 @@ type SingleBody = {
   followUpAt?: string | null;
   nextStep?: string | null;
   sourceQuery?: string | null;
+  outreachMessage?: string;
 };
 
 type BulkBody = {
@@ -98,6 +99,7 @@ export async function POST(req: Request, ctx: Ctx) {
       followUpAt: s.followUpAt,
       nextStep: s.nextStep,
       sourceQuery: s.sourceQuery,
+      outreachMessage: s.outreachMessage,
     });
     return NextResponse.json({ lead, created });
   } catch (e) {

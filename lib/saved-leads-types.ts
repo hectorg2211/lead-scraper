@@ -25,6 +25,8 @@ export type SavedLead = {
   nextStep: string | null;
   /** Search query that produced this lead, if saved from search */
   sourceQuery: string | null;
+  /** Draft WhatsApp / outreach message (generated or edited) */
+  outreachMessage: string;
   createdAt: string;
   updatedAt: string;
 };

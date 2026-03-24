@@ -3,9 +3,47 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
+import type { LucideIcon } from "lucide-react";
+import {
+  Building2,
+  ClipboardList,
+  Clock,
+  ExternalLink,
+  FileText,
+  Globe,
+  Hash,
+  Loader2,
+  MapPin,
+  MapPinned,
+  Phone,
+  Star,
+  Tag,
+  Wallet,
+} from "lucide-react";
 import type { PlaceLead } from "@/lib/places";
 import { cn } from "@/lib/utils";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table,
   TableBody,
@@ -16,11 +54,20 @@ import {
 } from "@/components/ui/table";
 import {
   createListApi,
+  fetchListLeads,
   fetchLists,
+  listLeadsQueryKey,
   listsQueryKey,
   savePlaceToList,
   savePlacesBulk,
 } from "@/lib/leads-api";
+import {
+  LEAD_STATUSES_ORDER,
+  STATUS_DOT_CLASSES,
+  STATUS_FIELD_CLASSES,
+  STATUS_LABELS,
+} from "@/lib/lead-status-i18n";
+import type { LeadList, LeadStatus } from "@/lib/saved-leads-types";
 import {
   fetchPlacesSearch,
   placesSearchQueryKey,
@@ -109,6 +156,365 @@ function toCsv(rows: PlaceLead[]): string {
   return lines.join("\r\n");
 }
 
+function PlaceDetailRow({
+  icon: Icon,
+  label,
+  children,
+}: {
+  icon: LucideIcon;
+  label: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex gap-3.5 rounded-xl border border-transparent px-1 py-2 transition-colors hover:border-zinc-200/80 hover:bg-zinc-50/90 dark:hover:border-zinc-700/80 dark:hover:bg-zinc-800/40">
+      <span
+        className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-zinc-100 text-zinc-500 shadow-sm dark:bg-zinc-800 dark:text-zinc-400"
+        aria-hidden
+      >
+        <Icon className="size-4" strokeWidth={1.75} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-zinc-500 dark:text-zinc-400">
+          {label}
+        </p>
+        <div className="mt-1 text-[15px] leading-snug text-zinc-900 dark:text-zinc-100">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PlaceDetailSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-1">
+      <h3 className="px-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-zinc-400 dark:text-zinc-500">
+        {title}
+      </h3>
+      <div className="space-y-0.5">{children}</div>
+    </div>
+  );
+}
+
+function PlaceDetailDialog({
+  place,
+  onOpenChange,
+  lists,
+  listsLoadError,
+  selectedListId,
+  onSelectList,
+  followUpStatus,
+  onFollowUpStatusChange,
+  followUpDisabledReason,
+  isSavingFollowUp,
+}: {
+  place: PlaceLead;
+  onOpenChange: (open: boolean) => void;
+  lists: LeadList[];
+  listsLoadError: boolean;
+  selectedListId: string;
+  onSelectList: (id: string) => void;
+  followUpStatus: LeadStatus;
+  onFollowUpStatusChange: (status: LeadStatus) => void;
+  followUpDisabledReason: string | null;
+  isSavingFollowUp: boolean;
+}) {
+  const web = place.website ? websiteHref(place.website) : "";
+  const telHref = place.phone
+    ? `tel:${place.phone.replace(/[\s().-]/g, "")}`
+    : "";
+  const subtitle =
+    place.primaryTypeLabel ?? place.primaryType ?? null;
+
+  const followUpBlockDisabled =
+    Boolean(followUpDisabledReason) || isSavingFollowUp;
+
+  return (
+    <Dialog open={true} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[min(88vh,760px)] gap-0 overflow-hidden border-zinc-200/90 p-0 shadow-2xl ring-1 ring-black/[0.04] sm:max-w-xl dark:border-zinc-800 dark:ring-white/[0.06]">
+        <div className="relative border-b border-emerald-200/40 bg-gradient-to-br from-emerald-50/95 via-white to-zinc-50/90 px-6 pt-7 pb-5 dark:border-emerald-900/30 dark:from-emerald-950/50 dark:via-zinc-950 dark:to-zinc-900">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_100%_-20%,rgba(16,185,129,0.12),transparent)] dark:bg-[radial-gradient(ellipse_80%_60%_at_100%_-20%,rgba(16,185,129,0.08),transparent)]" />
+          <DialogHeader className="relative gap-0 space-y-0 pr-10 text-left">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="flex size-9 items-center justify-center rounded-xl bg-emerald-600/10 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-400">
+                <Building2 className="size-[18px]" strokeWidth={1.75} />
+              </span>
+              {subtitle ? (
+                <span className="inline-flex max-w-[min(100%,260px)] truncate rounded-full border border-emerald-200/70 bg-white/80 px-2.5 py-0.5 text-xs font-medium text-emerald-800 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300/95">
+                  {subtitle}
+                </span>
+              ) : null}
+            </div>
+            <DialogTitle className="text-pretty text-xl font-semibold leading-tight tracking-tight text-zinc-900 dark:text-zinc-50">
+              {place.name}
+            </DialogTitle>
+            <DialogDescription className="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
+              Ficha del negocio según Google Places. Usa los enlaces para
+              contactar o comprobar en Maps.
+            </DialogDescription>
+          </DialogHeader>
+        </div>
+
+        <div className="max-h-[min(58vh,520px)] overflow-y-auto overscroll-contain px-4 py-5 sm:px-6">
+          <div className="space-y-8">
+            <PlaceDetailSection title="Seguimiento">
+              <div className="rounded-xl border border-zinc-200/90 bg-zinc-50/90 p-4 dark:border-zinc-700/80 dark:bg-zinc-900/40">
+                <div className="flex gap-3">
+                  <span
+                    className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg bg-white text-zinc-500 shadow-sm dark:bg-zinc-800 dark:text-zinc-400"
+                    aria-hidden
+                  >
+                    <ClipboardList className="size-4" strokeWidth={1.75} />
+                  </span>
+                  <div className="min-w-0 flex-1 space-y-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-zinc-500 dark:text-zinc-400">
+                      Lista y estado
+                    </p>
+                    <p className="text-[13px] leading-snug text-zinc-600 dark:text-zinc-400">
+                      Elige la lista y el estado del prospecto. Al cambiar el
+                      estado se guarda en MongoDB para seguimiento en{" "}
+                      <Link
+                        href="/lists"
+                        className="font-medium text-emerald-700 underline decoration-emerald-700/30 underline-offset-2 hover:decoration-emerald-700 dark:text-emerald-400"
+                      >
+                        Mis listas
+                      </Link>
+                      .
+                    </p>
+                    {followUpDisabledReason ? (
+                      <p className="text-xs text-amber-800 dark:text-amber-200/90">
+                        {followUpDisabledReason}
+                      </p>
+                    ) : null}
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="followup-list">Lista destino</Label>
+                        <Select
+                          value={selectedListId || undefined}
+                          onValueChange={(v) => {
+                            if (v) onSelectList(v);
+                          }}
+                          disabled={followUpBlockDisabled || lists.length === 0}
+                        >
+                          <SelectTrigger
+                            id="followup-list"
+                            className="w-full min-w-0 justify-between"
+                            size="default"
+                          >
+                            <SelectValue placeholder="Selecciona una lista" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {lists.map((l) => (
+                              <SelectItem key={l.id} value={l.id}>
+                                {l.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="followup-status">Estado</Label>
+                        <Select
+                          value={followUpStatus}
+                          onValueChange={(v) =>
+                            onFollowUpStatusChange(v as LeadStatus)
+                          }
+                          disabled={followUpBlockDisabled}
+                        >
+                          <SelectTrigger
+                            id="followup-status"
+                            className={cn(
+                              "w-full min-w-0 justify-between",
+                              STATUS_FIELD_CLASSES[followUpStatus]
+                            )}
+                            size="default"
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {LEAD_STATUSES_ORDER.map((s) => (
+                              <SelectItem key={s} value={s}>
+                                <span
+                                  className={cn(
+                                    "size-2 shrink-0 rounded-full",
+                                    STATUS_DOT_CLASSES[s]
+                                  )}
+                                  aria-hidden
+                                />
+                                {STATUS_LABELS[s]}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                    {isSavingFollowUp ? (
+                      <p className="flex items-center gap-2 text-xs text-zinc-500">
+                        <Loader2
+                          className="size-3.5 shrink-0 animate-spin"
+                          aria-hidden
+                        />
+                        Guardando en la lista…
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </PlaceDetailSection>
+
+            <PlaceDetailSection title="Contacto">
+              <PlaceDetailRow icon={MapPin} label="Dirección">
+                {place.address ? (
+                  <span className="whitespace-pre-wrap">{place.address}</span>
+                ) : (
+                  <span className="text-zinc-400 dark:text-zinc-500">—</span>
+                )}
+              </PlaceDetailRow>
+              <PlaceDetailRow icon={Phone} label="Teléfono">
+                {place.phone ? (
+                  <a
+                    href={telHref}
+                    className="font-medium text-emerald-700 underline decoration-emerald-600/25 underline-offset-2 transition hover:decoration-emerald-600 dark:text-emerald-400"
+                  >
+                    {place.phone}
+                  </a>
+                ) : (
+                  <span className="text-zinc-400 dark:text-zinc-500">—</span>
+                )}
+              </PlaceDetailRow>
+              <PlaceDetailRow icon={Globe} label="Sitio web">
+                {place.website ? (
+                  <a
+                    href={web}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 font-medium text-emerald-700 underline decoration-emerald-600/25 underline-offset-2 transition hover:decoration-emerald-600 dark:text-emerald-400"
+                  >
+                    Visitar sitio
+                    <ExternalLink className="size-3.5 opacity-70" />
+                  </a>
+                ) : (
+                  <span className="text-zinc-400 dark:text-zinc-500">—</span>
+                )}
+              </PlaceDetailRow>
+            </PlaceDetailSection>
+
+            <PlaceDetailSection title="Negocio">
+              <PlaceDetailRow icon={Tag} label="Tipos (Google)">
+                {place.types.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {place.types.map((t) => (
+                      <span
+                        key={t}
+                        className="rounded-md border border-zinc-200/90 bg-zinc-50 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800/80 dark:text-zinc-300"
+                      >
+                        {t.replace(/_/g, " ")}
+                      </span>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-zinc-400 dark:text-zinc-500">—</span>
+                )}
+              </PlaceDetailRow>
+              <PlaceDetailRow icon={FileText} label="Resumen">
+                {place.summary ? (
+                  <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-zinc-700 dark:text-zinc-300">
+                    {place.summary}
+                  </p>
+                ) : (
+                  <span className="text-zinc-400 dark:text-zinc-500">—</span>
+                )}
+              </PlaceDetailRow>
+              <PlaceDetailRow icon={Wallet} label="Nivel de precio">
+                {place.priceLevelLabel ?? place.priceLevel ?? (
+                  <span className="text-zinc-400 dark:text-zinc-500">—</span>
+                )}
+              </PlaceDetailRow>
+              <PlaceDetailRow icon={Clock} label="Horario">
+                {place.openingHoursText ? (
+                  <p className="whitespace-pre-wrap text-[14px] leading-relaxed text-zinc-700 dark:text-zinc-300">
+                    {place.openingHoursText}
+                  </p>
+                ) : (
+                  <span className="text-zinc-400 dark:text-zinc-500">—</span>
+                )}
+              </PlaceDetailRow>
+              <PlaceDetailRow icon={Star} label="Valoración">
+                {place.rating != null ? (
+                  <span className="inline-flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-2 py-0.5 text-base font-semibold text-amber-900 dark:bg-amber-950/50 dark:text-amber-200">
+                      <Star
+                        className="size-4 fill-amber-400 text-amber-500"
+                        strokeWidth={0}
+                      />
+                      {place.rating.toFixed(1)}
+                    </span>
+                    {place.reviewCount != null ? (
+                      <span className="text-sm text-zinc-500 dark:text-zinc-400">
+                        {place.reviewCount} reseñas
+                      </span>
+                    ) : null}
+                  </span>
+                ) : (
+                  <span className="text-zinc-400 dark:text-zinc-500">—</span>
+                )}
+              </PlaceDetailRow>
+              <PlaceDetailRow icon={Building2} label="Estado del negocio">
+                {place.businessStatus ?? (
+                  <span className="text-zinc-400 dark:text-zinc-500">—</span>
+                )}
+              </PlaceDetailRow>
+            </PlaceDetailSection>
+
+            <PlaceDetailSection title="Mapas">
+              <PlaceDetailRow icon={MapPinned} label="Google Maps">
+                {place.mapsUrl ? (
+                  <a
+                    href={place.mapsUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 rounded-lg border border-emerald-200/90 bg-emerald-50/80 px-3 py-2 text-sm font-semibold text-emerald-900 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-100/90 dark:border-emerald-800/80 dark:bg-emerald-950/45 dark:text-emerald-200 dark:hover:border-emerald-700 dark:hover:bg-emerald-950/70"
+                  >
+                    Abrir en Maps
+                    <ExternalLink className="size-3.5 opacity-80" />
+                  </a>
+                ) : (
+                  <span className="text-zinc-400 dark:text-zinc-500">—</span>
+                )}
+              </PlaceDetailRow>
+            </PlaceDetailSection>
+
+            {(place.lat != null && place.lng != null) || place.id ? (
+              <PlaceDetailSection title="Datos técnicos">
+                {place.lat != null && place.lng != null ? (
+                  <PlaceDetailRow icon={MapPin} label="Coordenadas (WGS84)">
+                    <code className="font-mono text-[13px] text-zinc-700 dark:text-zinc-300">
+                      {place.lat.toFixed(6)}, {place.lng.toFixed(6)}
+                    </code>
+                  </PlaceDetailRow>
+                ) : null}
+                {place.id ? (
+                  <PlaceDetailRow icon={Hash} label="ID de lugar (Google)">
+                    <code className="break-all font-mono text-[12px] leading-relaxed text-zinc-600 dark:text-zinc-400">
+                      {place.id}
+                    </code>
+                  </PlaceDetailRow>
+                ) : null}
+              </PlaceDetailSection>
+            ) : null}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export default function Home() {
   const [niche, setNiche] = useState("Clínica dental");
   const [location, setLocation] = useState("");
@@ -141,10 +547,32 @@ export default function Home() {
   const queryUsed = searchData?.query ? searchData.query : null;
   const truncated = Boolean(searchData?.truncated);
   const places = searchData?.places ?? [];
+  /** Tabla y exportaciones: más reseñas primero; sin dato al final. */
+  const placesSortedByReviews = useMemo(() => {
+    if (places.length === 0) return places;
+    return [...places].sort((a, b) => {
+      const aN = a.reviewCount;
+      const bN = b.reviewCount;
+      if (aN != null && bN != null) {
+        if (bN !== aN) return bN - aN;
+        const ar = a.rating ?? -Infinity;
+        const br = b.rating ?? -Infinity;
+        if (br !== ar) return br - ar;
+        return a.name.localeCompare(b.name, "es");
+      }
+      if (aN != null && bN == null) return -1;
+      if (aN == null && bN != null) return 1;
+      const ar = a.rating ?? -Infinity;
+      const br = b.rating ?? -Infinity;
+      if (br !== ar) return br - ar;
+      return a.name.localeCompare(b.name, "es");
+    });
+  }, [places]);
   const [csvUrl, setCsvUrl] = useState<string | null>(null);
   const [svgUrl, setSvgUrl] = useState<string | null>(null);
   const [locDetecting, setLocDetecting] = useState(false);
   const [locHint, setLocHint] = useState<string | null>(null);
+  const [detailPlace, setDetailPlace] = useState<PlaceLead | null>(null);
 
   const canSearch = niche.trim().length > 0 && location.trim().length > 0;
 
@@ -222,17 +650,17 @@ export default function Home() {
   }, [requestMyLocation]);
 
   useEffect(() => {
-    if (places.length === 0) {
+    if (placesSortedByReviews.length === 0) {
       setCsvUrl(null);
       setSvgUrl(null);
       return;
     }
-    const csv = toCsv(places);
+    const csv = toCsv(placesSortedByReviews);
     const csvBlob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const csvObjectUrl = URL.createObjectURL(csvBlob);
     setCsvUrl(csvObjectUrl);
 
-    const svg = toLeadsSvg(places, {
+    const svg = toLeadsSvg(placesSortedByReviews, {
       niche: niche.trim(),
       location: location.trim(),
       query: queryUsed ?? undefined,
@@ -245,7 +673,7 @@ export default function Home() {
       URL.revokeObjectURL(csvObjectUrl);
       URL.revokeObjectURL(svgObjectUrl);
     };
-  }, [places, niche, location, queryUsed]);
+  }, [placesSortedByReviews, niche, location, queryUsed]);
 
   const runSearch = useCallback(() => {
     setCommittedSearch({
@@ -298,6 +726,9 @@ export default function Home() {
       }),
     onSuccess: (res) => {
       void qc.invalidateQueries({ queryKey: listsQueryKey });
+      void qc.invalidateQueries({
+        queryKey: listLeadsQueryKey(selectedListId || null),
+      });
       setSaveHint(
         res.created ? "Guardado en la lista." : "Ya existía; datos actualizados."
       );
@@ -309,9 +740,13 @@ export default function Home() {
   });
 
   const saveBulkMut = useMutation({
-    mutationFn: () => savePlacesBulk(selectedListId, places, queryUsed),
+    mutationFn: () =>
+      savePlacesBulk(selectedListId, placesSortedByReviews, queryUsed),
     onSuccess: (res) => {
       void qc.invalidateQueries({ queryKey: listsQueryKey });
+      void qc.invalidateQueries({
+        queryKey: listLeadsQueryKey(selectedListId || null),
+      });
       const parts = [
         `${res.inserted} nuevos`,
         res.updated > 0 ? `${res.updated} actualizados` : null,
@@ -331,6 +766,71 @@ export default function Home() {
 
   const canSaveToMongo =
     Boolean(selectedListId) && !listsLoadError && lists.length > 0;
+
+  const { data: listLeadsForModal } = useQuery({
+    queryKey: listLeadsQueryKey(selectedListId || null),
+    queryFn: () => fetchListLeads(selectedListId!),
+    enabled: Boolean(detailPlace && selectedListId && !listsLoadError),
+    staleTime: 15_000,
+  });
+
+  const savedLeadStatusForModal = useMemo(() => {
+    if (!detailPlace?.id || !listLeadsForModal?.leads) return null;
+    const hit = listLeadsForModal.leads.find(
+      (l) => l.place.id === detailPlace.id
+    );
+    return hit?.status ?? null;
+  }, [detailPlace?.id, listLeadsForModal]);
+
+  const [followUpStatusOverride, setFollowUpStatusOverride] = useState<
+    LeadStatus | null
+  >(null);
+
+  useEffect(() => {
+    setFollowUpStatusOverride(null);
+  }, [detailPlace?.id, selectedListId]);
+
+  const effectiveFollowUpStatus: LeadStatus =
+    followUpStatusOverride ?? savedLeadStatusForModal ?? "new";
+
+  const followUpDisabledReason: string | null = listsLoadError
+    ? "No hay conexión a la base de datos (añade MONGODB_URI y reinicia)."
+    : lists.length === 0
+      ? "Crea una lista desde el panel superior antes de guardar seguimiento."
+      : detailPlace && !detailPlace.id
+        ? "Este resultado no tiene ID de Google; no se puede deduplicar en la lista."
+        : null;
+
+  const saveFollowUpMut = useMutation({
+    mutationFn: async (status: LeadStatus) => {
+      if (!selectedListId || !detailPlace?.id) {
+        throw new Error("Selecciona una lista.");
+      }
+      return savePlaceToList(selectedListId, detailPlace, {
+        status,
+        tags: parseCsvTags(saveTags),
+        sourceQuery: queryUsed,
+      });
+    },
+    onSuccess: (res) => {
+      setFollowUpStatusOverride(null);
+      void qc.invalidateQueries({ queryKey: listsQueryKey });
+      void qc.invalidateQueries({
+        queryKey: listLeadsQueryKey(selectedListId || null),
+      });
+      setSaveHint(
+        res.created
+          ? `Guardado en lista — ${STATUS_LABELS[res.lead.status]}.`
+          : `Seguimiento: ${STATUS_LABELS[res.lead.status]}.`
+      );
+      setTimeout(() => setSaveHint(null), 2500);
+    },
+    onError: (e) => {
+      setFollowUpStatusOverride(null);
+      setSaveHint(e instanceof Error ? e.message : "Error al guardar");
+      setTimeout(() => setSaveHint(null), 4000);
+    },
+  });
 
   return (
     <div className="min-h-full bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
@@ -640,7 +1140,7 @@ export default function Home() {
               <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                 Mapa de ubicaciones
               </h3>
-              <ResultsMap places={places} />
+              <ResultsMap places={placesSortedByReviews} />
             </div>
 
             <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
@@ -659,8 +1159,11 @@ export default function Home() {
                     <TableHead className="min-w-[130px] max-w-[160px] px-3 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
                       Categoría
                     </TableHead>
-                    <TableHead className="min-w-[72px] max-w-[90px] px-3 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                      Nota
+                    <TableHead
+                      className="min-w-[96px] max-w-[120px] px-3 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-300"
+                      title="Orden de la tabla: más reseñas primero"
+                    >
+                      Reseñas
                     </TableHead>
                     <TableHead className="min-w-[160px] max-w-[200px] px-3 py-3 text-sm font-medium text-zinc-700 dark:text-zinc-300">
                       Horario
@@ -674,12 +1177,19 @@ export default function Home() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {places.map((p) => {
+                  {placesSortedByReviews.map((p) => {
                     const web = p.website ? websiteHref(p.website) : "";
                     return (
                       <TableRow
                         key={p.id || p.name + p.address}
-                        className="border-zinc-200 hover:!bg-zinc-50/80 data-[state=selected]:bg-zinc-100 dark:border-zinc-800 dark:hover:!bg-zinc-800/35 dark:data-[state=selected]:bg-zinc-800"
+                        aria-label={`Ver detalles: ${p.name}`}
+                        className="cursor-pointer border-zinc-200 hover:!bg-zinc-50/80 data-[state=selected]:bg-zinc-100 dark:border-zinc-800 dark:hover:!bg-zinc-800/35 dark:data-[state=selected]:bg-zinc-800"
+                        onClick={(e) => {
+                          if ((e.target as HTMLElement).closest("a, button")) {
+                            return;
+                          }
+                          setDetailPlace(p);
+                        }}
                       >
                         <TableCell className="min-w-0 align-top py-3">
                           <span
@@ -738,18 +1248,31 @@ export default function Home() {
                           )}
                         </TableCell>
                         <TableCell className="min-w-0 align-top py-3 tabular-nums text-sm">
-                          {p.rating != null ? (
+                          {p.reviewCount != null ? (
                             <span
                               className="block max-w-full truncate"
-                              title={`${p.rating}${p.reviewCount != null ? ` · ${p.reviewCount} reseñas` : ""}`}
+                              title={
+                                p.rating != null
+                                  ? `${p.reviewCount.toLocaleString("es")} reseñas · ${p.rating.toFixed(1)} ★`
+                                  : `${p.reviewCount.toLocaleString("es")} reseñas`
+                              }
                             >
-                              {p.rating.toFixed(1)}
-                              {p.reviewCount != null ? (
+                              <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                                {p.reviewCount.toLocaleString("es")}
+                              </span>
+                              {p.rating != null ? (
                                 <span className="text-zinc-500 dark:text-zinc-400">
                                   {" "}
-                                  ({p.reviewCount})
+                                  · {p.rating.toFixed(1)}
                                 </span>
                               ) : null}
+                            </span>
+                          ) : p.rating != null ? (
+                            <span
+                              className="text-zinc-500 dark:text-zinc-400"
+                              title={`${p.rating.toFixed(1)} ★ (sin recuento de reseñas)`}
+                            >
+                              {p.rating.toFixed(1)} ★
                             </span>
                           ) : (
                             "—"
@@ -816,6 +1339,27 @@ export default function Home() {
                 </TableBody>
               </Table>
             </div>
+
+            {detailPlace ? (
+              <PlaceDetailDialog
+                place={detailPlace}
+                onOpenChange={(open) => {
+                  if (!open) setDetailPlace(null);
+                }}
+                lists={lists}
+                listsLoadError={listsLoadError}
+                selectedListId={selectedListId}
+                onSelectList={setSelectedListId}
+                followUpStatus={effectiveFollowUpStatus}
+                onFollowUpStatusChange={(status) => {
+                  if (status === effectiveFollowUpStatus) return;
+                  setFollowUpStatusOverride(status);
+                  saveFollowUpMut.mutate(status);
+                }}
+                followUpDisabledReason={followUpDisabledReason}
+                isSavingFollowUp={saveFollowUpMut.isPending}
+              />
+            ) : null}
 
             <p className="text-xs text-zinc-500 dark:text-zinc-500">
               Consejo: usa el enlace de Maps para comprobar el negocio y luego

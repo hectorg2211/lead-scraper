@@ -30,6 +30,8 @@ type LeadDoc = {
   followUpAt: Date | null;
   nextStep: string | null;
   sourceQuery: string | null;
+  /** Present on new docs; older rows may omit until next save */
+  outreachMessage?: string;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -61,6 +63,7 @@ function mapLead(d: LeadDoc): SavedLead {
     followUpAt: d.followUpAt ? toIso(d.followUpAt) : null,
     nextStep: d.nextStep,
     sourceQuery: d.sourceQuery,
+    outreachMessage: d.outreachMessage ?? "",
     createdAt: toIso(d.createdAt),
     updatedAt: toIso(d.updatedAt),
   };
@@ -219,6 +222,7 @@ type AddLeadInput = {
   followUpAt?: string | null;
   nextStep?: string | null;
   sourceQuery?: string | null;
+  outreachMessage?: string;
 };
 
 export async function addLead(
@@ -254,6 +258,9 @@ export async function addLead(
     }
     if (input.nextStep !== undefined) patch.nextStep = input.nextStep;
     if (input.sourceQuery !== undefined) patch.sourceQuery = input.sourceQuery;
+    if (input.outreachMessage !== undefined) {
+      patch.outreachMessage = input.outreachMessage;
+    }
 
     await col.updateOne({ _id: existing._id }, { $set: patch });
     const updated = await col.findOne({ _id: existing._id });
@@ -273,6 +280,7 @@ export async function addLead(
     followUpAt: input.followUpAt ? new Date(input.followUpAt) : null,
     nextStep: input.nextStep?.trim() ?? null,
     sourceQuery: input.sourceQuery?.trim() ?? null,
+    outreachMessage: input.outreachMessage?.trim() ?? "",
     createdAt: now,
     updatedAt: now,
   };
@@ -345,6 +353,7 @@ export async function updateLead(
     priority?: LeadPriority;
     followUpAt?: string | null;
     nextStep?: string | null;
+    outreachMessage?: string;
   }
 ): Promise<SavedLead | null> {
   const id = parseLeadId(leadId);
@@ -364,6 +373,9 @@ export async function updateLead(
   }
   if (patch.nextStep !== undefined) {
     $set.nextStep = patch.nextStep?.trim() ?? null;
+  }
+  if (patch.outreachMessage !== undefined) {
+    $set.outreachMessage = patch.outreachMessage;
   }
 
   await col.updateOne({ _id: id }, { $set });
