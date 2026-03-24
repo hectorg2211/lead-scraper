@@ -193,7 +193,7 @@ export async function getListById(listId: string): Promise<LeadList | null> {
 
 export async function listLeads(
   listId: string,
-  options?: { tag?: string }
+  options?: { tag?: string; status?: LeadStatus }
 ): Promise<SavedLead[]> {
   const lid = parseListId(listId);
   const col = await leadsCol();
@@ -201,6 +201,9 @@ export async function listLeads(
   if (options?.tag?.trim()) {
     const t = options.tag.trim();
     filter.tags = new RegExp(`^${escapeRegex(t)}$`, "i");
+  }
+  if (options?.status) {
+    filter.status = options.status;
   }
   const docs = await col
     .find(filter)

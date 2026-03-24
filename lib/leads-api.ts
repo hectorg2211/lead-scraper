@@ -75,15 +75,23 @@ export async function deleteListApi(listId: string): Promise<void> {
   }
 }
 
-export function listLeadsQueryKey(listId: string | null, tag?: string) {
-  return ["saved-leads", listId, tag ?? ""] as const;
+export function listLeadsQueryKey(
+  listId: string | null,
+  tag?: string,
+  status?: LeadStatus | ""
+) {
+  return ["saved-leads", listId, tag ?? "", status ?? ""] as const;
 }
 
 export async function fetchListLeads(
   listId: string,
-  tag?: string
+  tag?: string,
+  status?: LeadStatus | ""
 ): Promise<{ list: LeadList; leads: SavedLead[] }> {
-  const q = tag?.trim() ? `?tag=${encodeURIComponent(tag.trim())}` : "";
+  const params = new URLSearchParams();
+  if (tag?.trim()) params.set("tag", tag.trim());
+  if (status) params.set("status", status);
+  const q = params.toString() ? `?${params.toString()}` : "";
   const res = await fetch(`/api/lists/${listId}/leads${q}`);
   const data = (await res.json()) as {
     list?: LeadList;

@@ -7,6 +7,7 @@ import {
   getListById,
   listLeads,
 } from "@/lib/saved-leads-db";
+import { LEAD_STATUSES_ORDER } from "@/lib/lead-status-i18n";
 import type {
   LeadPriority,
   LeadStatus,
@@ -26,7 +27,13 @@ export async function GET(req: Request, ctx: Ctx) {
     }
     const url = new URL(req.url);
     const tag = url.searchParams.get("tag") ?? undefined;
-    const leads = await listLeads(listId, { tag });
+    const rawStatus = url.searchParams.get("status")?.trim();
+    const status =
+      rawStatus &&
+      (LEAD_STATUSES_ORDER as readonly string[]).includes(rawStatus)
+        ? (rawStatus as LeadStatus)
+        : undefined;
+    const leads = await listLeads(listId, { tag, status });
     return NextResponse.json({ list, leads });
   } catch (e) {
     const message =

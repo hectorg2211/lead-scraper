@@ -498,11 +498,21 @@ export default function ListDetailPage() {
 
   const qc = useQueryClient();
   const [tagFilter, setTagFilter] = useState("");
+  const [statusFilter, setStatusFilter] = useState<LeadStatus | "">("");
   const [openLeadId, setOpenLeadId] = useState<string | null>(null);
 
   const query = useQuery({
-    queryKey: listLeadsQueryKey(listId || null, tagFilter),
-    queryFn: () => fetchListLeads(listId, tagFilter || undefined),
+    queryKey: listLeadsQueryKey(
+      listId || null,
+      tagFilter,
+      statusFilter || undefined
+    ),
+    queryFn: () =>
+      fetchListLeads(
+        listId,
+        tagFilter || undefined,
+        statusFilter || undefined
+      ),
     enabled: Boolean(listId),
   });
 
@@ -563,20 +573,39 @@ export default function ListDetailPage() {
 
         {query.data && (
           <>
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex flex-col gap-4">
               <p className="text-sm text-zinc-600 dark:text-zinc-400">
                 {query.data.leads.length}{" "}
                 {query.data.leads.length === 1 ? "prospecto" : "prospectos"}
               </p>
-              <label className="flex flex-col gap-1 text-sm">
-                <span className="font-medium">Filtrar por etiqueta</span>
-                <input
-                  value={tagFilter}
-                  onChange={(e) => setTagFilter(e.target.value)}
-                  placeholder="Exacto, sin distinguir mayúsculas"
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-950"
-                />
-              </label>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-medium">Filtrar por etiqueta</span>
+                  <input
+                    value={tagFilter}
+                    onChange={(e) => setTagFilter(e.target.value)}
+                    placeholder="Exacto, sin distinguir mayúsculas"
+                    className="rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-950"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-sm">
+                  <span className="font-medium">Filtrar por estado</span>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) =>
+                      setStatusFilter((e.target.value || "") as LeadStatus | "")
+                    }
+                    className="rounded-lg border border-zinc-300 bg-white px-3 py-2 dark:border-zinc-600 dark:bg-zinc-950"
+                  >
+                    <option value="">Todos los estados</option>
+                    {LEAD_STATUSES_ORDER.map((s) => (
+                      <option key={s} value={s}>
+                        {STATUS_LABELS[s]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             </div>
 
             <div className="flex flex-col gap-2">
@@ -620,8 +649,8 @@ export default function ListDetailPage() {
 
             {query.data.leads.length === 0 && (
               <p className="text-sm text-zinc-500">
-                {tagFilter.trim()
-                  ? "Ningún prospecto con esa etiqueta."
+                {tagFilter.trim() || statusFilter
+                  ? "Ningún prospecto con estos filtros."
                   : "Esta lista está vacía. Guarda desde el buscador."}
               </p>
             )}
