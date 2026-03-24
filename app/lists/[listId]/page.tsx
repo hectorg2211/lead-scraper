@@ -19,6 +19,7 @@ import {
   updateLeadApi,
 } from "@/lib/leads-api";
 import {
+  LEAD_STATUSES_ORDER,
   STATUS_BADGE_CLASSES,
   STATUS_FIELD_CLASSES,
   STATUS_LABELS,
@@ -37,10 +38,19 @@ const PRIORITY_LABELS: Record<LeadPriority, string> = {
   high: "Alta",
 };
 
-function truncateDetail(s: string, maxLen: number): string {
-  const t = s.trim();
-  if (t.length <= maxLen) return t;
-  return `${t.slice(0, maxLen - 1)}…`;
+function formatReviewsLine(place: SavedLead["place"]): string {
+  const r = place.rating;
+  const n = place.reviewCount;
+  if (r != null && n != null && n > 0) {
+    return `★ ${r.toFixed(1)} · ${n} reseñas`;
+  }
+  if (r != null) {
+    return `★ ${r.toFixed(1)}`;
+  }
+  if (n != null && n > 0) {
+    return `${n} reseñas`;
+  }
+  return "Sin reseñas";
 }
 
 function LeadRow({
@@ -51,15 +61,18 @@ function LeadRow({
   onSelect: () => void;
 }) {
   const phone = lead.place.phone?.trim() ?? "";
-  const address = lead.place.address?.trim() ?? "";
-  const detailParts: string[] = [];
+  const hasWeb = Boolean(lead.place.website?.trim());
+  const detailParts: string[] = [
+    formatReviewsLine(lead.place),
+    hasWeb ? "Con web" : "Sin web",
+  ];
   if (phone) detailParts.push(phone);
-  if (address) detailParts.push(truncateDetail(address, 40));
-  const secondary =
-    detailParts.join(" · ") ||
-    lead.place.primaryTypeLabel ||
-    (lead.tags[0] ? `#${lead.tags[0]}` : null) ||
-    "—";
+  if (lead.place.primaryTypeLabel?.trim()) {
+    detailParts.push(lead.place.primaryTypeLabel.trim());
+  } else if (lead.tags[0]) {
+    detailParts.push(`#${lead.tags[0]}`);
+  }
+  const secondary = detailParts.join(" · ");
 
   return (
     <button
@@ -380,7 +393,7 @@ function LeadEditor({
                 STATUS_FIELD_CLASSES[status]
               )}
             >
-              {(Object.keys(STATUS_LABELS) as LeadStatus[]).map((k) => (
+              {LEAD_STATUSES_ORDER.map((k) => (
                 <option key={k} value={k}>
                   {STATUS_LABELS[k]}
                 </option>

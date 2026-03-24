@@ -3,6 +3,7 @@ import type { PlaceLead } from "@/lib/places";
 /** Pipeline stages for outbound / CRM-style tracking */
 export type LeadStatus =
   | "new"
+  | "no_whatsapp"
   | "contacted"
   | "qualified"
   | "lost"
